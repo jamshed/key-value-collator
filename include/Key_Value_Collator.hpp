@@ -91,6 +91,56 @@ public:
     void deposit(const std::vector<key_val_pair_t>& buf);
 };
 
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::Key_Value_Collator(const std::string& work_file_pref):
+    hash(),
+    work_file_pref(work_file_pref),
+    partition_buf(partition_count),
+    partition_file(partition_count)
+{
+    static_assert(partition_buf_elem > 0, "Invalid configuration for partition buffer memory.");
+
+    for(std::size_t p_id = 0; p_id < partition_count; ++p_id)
+    {
+        partition_buf[p_id].reserve(partition_buf_elem);
+        partition_file[p_id].open(partition_file_path(p_id), std::ios::out | std::ios::binary);
+
+        mapper = new std::thread(&Key_Value_Collator<T_key_, T_val_, T_hasher_>::map, this);
+    }
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::~Key_Value_Collator()
+{
+    delete mapper;
+}
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline const std::string Key_Value_Collator<T_key_, T_val_, T_hasher_>::partition_file_path(const std::size_t partition_id) const
+{
+    return work_file_pref + "." + std::to_string(partition_id) + partition_file_ext;
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::map()
+{}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+const char Key_Value_Collator<T_key_, T_val_, T_hasher_>::partition_file_ext[];
+
+
+template <typename T_key_>
+class Identity_Functor
+{
+public:
+
+    T_key_ operator()(const T_key_& key) const { return key; }
+};
+
 }
 
 
