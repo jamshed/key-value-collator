@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+
+# Build files and binaries
+build/
+bin/
