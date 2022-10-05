@@ -15,6 +15,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(WARNING_FLAGS -Wall -Wextra)    # https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html
 
 
+include(FindThreads)
+if(NOT Threads_FOUND)
+    message(FATAL_ERROR "A supported threads library is required. Aborting.")
+endif()
+
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
