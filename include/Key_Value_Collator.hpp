@@ -13,6 +13,8 @@
 #include <atomic>
 #include <utility>
 #include <fstream>
+#include <cstdlib>
+#include <iostream>
 #include <thread>
 
 
@@ -41,12 +43,14 @@ private:
 
     static constexpr std::size_t partition_count = (1 << 7);    // Number of partitions for the keys.
     static constexpr std::size_t partition_buf_mem = (1LU * 1024 * 1024);   // Maximum memory for a partition buffer: 1MB.
-    static constexpr std::size_t partition_buf_elem = partition_buf_mem / sizeof(key_val_pair_t);   // Maximum number of pairs to keep in a partition buffer.
+    static constexpr std::size_t partition_buf_elem_th = partition_buf_mem / sizeof(key_val_pair_t);    // Maximum number of pairs to keep in a partition buffer.
 
     std::vector<std::vector<key_val_pair_t>> partition_buf; // `partition_buf[i]` is the in-memory buffer for partition `i`.
     std::vector<std::ofstream> partition_file;  // `partition_file[i]` is the disk-storage file for partition `i`.
 
-    moodycamel::ConcurrentQueue<std::vector<key_val_pair_t>*> producer_buf_q;   // Buffer spaces to copy-in incoming data from the producers.
+    moodycamel::ConcurrentQueue<std::vector<key_val_pair_t>*> buf_q;    // Buffer spaces to copy-in incoming data from the producers.
+    std::atomic<uint64_t> produced_buf; // Number of buffers deposited by the producers.
+    std::atomic<uint64_t> consumed_buf; // Number of buffers processed by the collator.
 
     std::thread* mapper;    // The background thread mapping key-value pairs to corresponding partitions.
     std::atomic<bool> stream_incoming;  // Flag denoting whether the incoming key-value streams have ended or not.
@@ -65,14 +69,15 @@ private:
 
     // Returns the corresponding partition ID for the key-value pair
     // `key_val_pair`.
-    static std::size_t get_partition_id(const key_val_pair_t& key_val_pair);
+    std::size_t get_partition_id(const key_val_pair_t& key_val_pair) const;
 
     // Flushes the buffer of the partition with ID `partition_ID` to disk and
     // clears the buffer.
     void flush(std::size_t partition_id);
 
     // Closes the deposit stream incoming from the producers and flushes the
-    // remaining in-memory content to disk.
+    // remaining in-memory content to disk. All deposit operations from the
+    // producers must be made before invoking this.
     void close_deposit_stream();
 
 
@@ -97,13 +102,15 @@ inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::Key_Value_Collator(const s
     hash(),
     work_file_pref(work_file_pref),
     partition_buf(partition_count),
-    partition_file(partition_count)
+    partition_file(partition_count),
+    mapper(nullptr),
+    stream_incoming(true)
 {
-    static_assert(partition_buf_elem > 0, "Invalid configuration for partition buffer memory.");
+    static_assert(partition_buf_elem_th > 0, "Invalid configuration for partition buffer memory.");
 
     for(std::size_t p_id = 0; p_id < partition_count; ++p_id)
     {
-        partition_buf[p_id].reserve(partition_buf_elem);
+        partition_buf[p_id].reserve(partition_buf_elem_th);
         partition_file[p_id].open(partition_file_path(p_id), std::ios::out | std::ios::binary);
 
         mapper = new std::thread(&Key_Value_Collator<T_key_, T_val_, T_hasher_>::map, this);
@@ -126,7 +133,57 @@ inline const std::string Key_Value_Collator<T_key_, T_val_, T_hasher_>::partitio
 
 template <typename T_key_, typename T_val_, typename T_hasher_>
 inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::map()
-{}
+{
+    std::vector<key_val_pair_t>* buf_ptr;
+    while(stream_incoming || consumed_buf < produced_buf)
+        if(buf_q.try_dequeue(buf_ptr))
+        {
+            map_buffer(*buf_ptr);
+
+            buf_ptr->clear();
+            buf_q.enqueue(buf_ptr);
+
+            consumed_buf.fetch_add(1, std::memory_order_acquire);
+        }
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::map_buffer(const std::vector<Key_Value_Collator::key_val_pair_t>& buf)
+{
+    for(const auto& key_val_pair : buf)
+    {
+        const std::size_t p_id = get_partition_id(key_val_pair);
+        auto& p_buf = partition_buf[p_id];
+        p_buf.emplace_back(key_val_pair);
+
+        assert(p_buf.size() <= partition_buf_elem_th);
+        if(p_buf.size() == partition_buf_elem_th)
+            flush(p_id);
+    }
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::flush(const std::size_t partition_id)
+{
+    auto& buf  = partition_buf[partition_id];
+    auto& file = partition_file[partition_id];
+    if(!file.write(reinterpret_cast<const char*>(buf.data()), buf.size() * sizeof(key_val_pair_t)))
+    {
+        std::cerr << "Error writing to partition file(s) of the collator. Aborting.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    buf.clear();
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline std::size_t Key_Value_Collator<T_key_, T_val_, T_hasher_>::get_partition_id(const Key_Value_Collator::key_val_pair_t& key_val_pair) const
+{
+    return hash(key_val_pair.first) & (partition_count - 1);
+}
 
 
 template <typename T_key_, typename T_val_, typename T_hasher_>
