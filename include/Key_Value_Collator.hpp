@@ -64,8 +64,8 @@ private:
     std::atomic<bool> stream_incoming;  // Flag denoting whether the incoming key-value streams have ended or not.
 
 
-    // Returns the disk-file path for the partition `partition_id`.
-    const std::string partition_file_path(std::size_t partition_id) const;
+    // Returns the disk-file path for the partition `p_id`.
+    const std::string partition_file_path(std::size_t p_id) const;
 
     // Maps the key-value pairs from the producers to the partitions
     // corresponding to the keys.
@@ -75,13 +75,12 @@ private:
     // corresponding to the keys.
     void map_buffer(const std::vector<key_val_pair_t>& buf);
 
-    // Returns the corresponding partition ID for the key-value pair
-    // `key_val_pair`.
-    std::size_t get_partition_id(const key_val_pair_t& key_val_pair) const;
+    // Returns the corresponding partition ID for the key `key`.
+    std::size_t get_partition_id(const T_key_& key) const;
 
-    // Flushes the buffer of the partition with ID `partition_ID` to disk and
+    // Flushes the buffer of the partition with ID `p_id` to disk and
     // clears the buffer.
-    void flush(std::size_t partition_id);
+    void flush(std::size_t p_id);
 
 
 public:
@@ -229,9 +228,9 @@ inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::~Key_Value_Collator()
 
 
 template <typename T_key_, typename T_val_, typename T_hasher_>
-inline const std::string Key_Value_Collator<T_key_, T_val_, T_hasher_>::partition_file_path(const std::size_t partition_id) const
+inline const std::string Key_Value_Collator<T_key_, T_val_, T_hasher_>::partition_file_path(const std::size_t p_id) const
 {
-    return work_file_pref + "." + std::to_string(partition_id) + partition_file_ext;
+    return work_file_pref + "." + std::to_string(p_id) + partition_file_ext;
 }
 
 
@@ -256,7 +255,7 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::map_buffer(const std:
 {
     for(const auto& key_val_pair : buf)
     {
-        const std::size_t p_id = get_partition_id(key_val_pair);
+        const std::size_t p_id = get_partition_id(key_val_pair.first);
         auto& p_buf = partition_buf[p_id];
         p_buf.emplace_back(key_val_pair);
 
@@ -268,10 +267,10 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::map_buffer(const std:
 
 
 template <typename T_key_, typename T_val_, typename T_hasher_>
-inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::flush(const std::size_t partition_id)
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::flush(const std::size_t p_id)
 {
-    auto& buf  = partition_buf[partition_id];
-    auto& file = partition_file[partition_id];
+    auto& buf  = partition_buf[p_id];
+    auto& file = partition_file[p_id];
     if(!file.write(reinterpret_cast<const char*>(buf.data()), buf.size() * sizeof(key_val_pair_t)))
     {
         std::cerr << "Error writing to partition file(s) of the collator. Aborting.\n";
@@ -283,9 +282,9 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::flush(const std::size
 
 
 template <typename T_key_, typename T_val_, typename T_hasher_>
-inline std::size_t Key_Value_Collator<T_key_, T_val_, T_hasher_>::get_partition_id(const Key_Value_Collator::key_val_pair_t& key_val_pair) const
+inline std::size_t Key_Value_Collator<T_key_, T_val_, T_hasher_>::get_partition_id(const T_key_& key) const
 {
-    return hash(key_val_pair.first) & (partition_count - 1);
+    return hash(key) & (partition_count - 1);
 }
 
 
