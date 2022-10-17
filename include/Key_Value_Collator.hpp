@@ -4,6 +4,7 @@
 
 
 
+#include "Spin_Lock.hpp"
 #include "concurrentqueue/concurrentqueue.h"
 
 #include <cstdint>
@@ -95,6 +96,66 @@ public:
 
     // Deposits the buffer content of `buf` to the collator.
     void deposit(const std::vector<key_val_pair_t>& buf);
+};
+
+
+// A collection of objects of type `T_obj_`, ready to be used by multiple
+// threads.
+template <typename T_obj_>
+class Object_Pool
+{
+private:
+
+    std::vector<T_obj_> pool;   // The object collection.
+    Spin_Lock lock_;    // Mutual-exclusion lock to avoid concurrent updates of the pool.
+    std::atomic<std::size_t> size_; // Number of elements in the pool.
+
+
+public:
+
+    // Constructs an empty object-pool.
+    Object_Pool(): size_(0)
+    {}
+
+
+    // Adds the object `obj` to the pool.
+    void push(const T_obj_& obj)  // Should use move operand?
+    {
+        lock_.lock();
+        pool.emplace_back(obj);
+        size_.fetch_add(1, std::memory_order_acquire);  // size_++;
+        lock_.unlock();
+    }
+
+
+    // Returns `true` iff the pool is empty.
+    bool empty() const { return size_ == 0; }
+
+
+    // Tries to fetch an object to `obj` from the pool. Returns `true` iff
+    // such an object is found.
+    bool fetch(T_obj_& obj)
+    {
+        if(empty())
+            return false;
+
+        bool success = false;
+
+        lock_.lock();
+
+        if(!pool.empty())
+        {
+            size_.fetch_sub(1, std::memory_order_acquire);  // size_--;
+            obj = pool.back();   // std::move(pool.back());
+            pool.pop_back();
+
+            success = true;
+        }
+
+        lock_.unlock();
+
+        return success;
+    }
 };
 
 
