@@ -35,9 +35,13 @@ template <typename T_obj_> class Object_Pool;
 template <typename T_key_, typename T_val_, typename T_hasher_>
 class Key_Value_Collator
 {
-private:
+public:
 
     typedef std::pair<T_key_, T_val_> key_val_pair_t;
+    typedef std::vector<key_val_pair_t> buf_t;  // Type of the data buffers.
+
+
+private:
 
     const T_hasher_ hash;   // Hasher object to hash the keys to a numerical address-space.
 
@@ -50,7 +54,6 @@ private:
     static constexpr std::size_t partition_buf_mem = (1LU * 1024 * 1024);   // Maximum memory for a partition buffer: 1MB.
     static constexpr std::size_t partition_buf_elem_th = partition_buf_mem / sizeof(key_val_pair_t);    // Maximum number of pairs to keep in a partition buffer.
 
-    typedef std::vector<key_val_pair_t> buf_t;  // Type of the data buffers.
     std::vector<buf_t> partition_buf;   // `partition_buf[i]` is the in-memory buffer for partition `i`.
     std::vector<std::ofstream> partition_file;  // `partition_file[i]` is the disk-storage file for partition `i`.
 
@@ -73,7 +76,7 @@ private:
 
     // Maps the key-value pairs from the data buffer `buf` to the partitions
     // corresponding to the keys.
-    void map_buffer(const std::vector<key_val_pair_t>& buf);
+    void map_buffer(const buf_t& buf);
 
     // Returns the corresponding partition ID for the key `key`.
     std::size_t get_partition_id(const T_key_& key) const;
