@@ -100,8 +100,11 @@ public:
 
     ~Key_Value_Collator();
 
-    // Deposits the buffer content of `buf` to the collator.
-    void deposit(const std::vector<key_val_pair_t>& buf);
+    // Returns an available free buffer.
+    buf_t& get_buffer();
+
+    // Returns the buffer `buf` to the collator with deposited data.
+    void return_buffer(buf_t& buf);
 
     // Closes the deposit stream incoming from the producers and flushes the
     // remaining in-memory content to disk. All deposit operations from the
@@ -227,6 +230,23 @@ inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::~Key_Value_Collator()
             std::cerr << "Error removing temporary files. Aborting.\n";
             std::exit(EXIT_FAILURE);
         }
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline typename Key_Value_Collator<T_key_, T_val_, T_hasher_>::buf_t& Key_Value_Collator<T_key_, T_val_, T_hasher_>::get_buffer()
+{
+    buf_t* buf_p;
+    while(!free_buf_pool.fetch(buf_p));
+
+    return *buf_p;
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::return_buffer(buf_t& buf)
+{
+    full_buf_pool.push(&buf);
 }
 
 
