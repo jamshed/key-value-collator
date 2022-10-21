@@ -29,7 +29,7 @@ namespace key_value_collator
 {
 
 
-template <typename T_obj_> class Object_Pool;
+template <typename T_buf_> class Buffer_Pool;
 
 // A class to: collate a collection of key-value pairs, deposited from multiple
 // producers; and to iterate over the collated key-value collection. Keys are of
@@ -60,9 +60,7 @@ private:
     std::vector<buf_t> partition_buf;   // `partition_buf[i]` is the in-memory buffer for partition `i`.
     std::vector<std::ofstream> partition_file;  // `partition_file[i]` is the disk-storage file for partition `i`.
 
-    Object_Pool<buf_t*> free_buf_pool;  // Buffers to copy-in incoming data from the producers.
-    Object_Pool<buf_t*> full_buf_pool;  // Deposited data from the producers.
-
+    Buffer_Pool<buf_t*> buf_pool;   // Managed buffer collection to copy-in and process incoming data from the producers.
     const std::size_t buf_count;    // Number of concurrent buffers for the producers.
     static constexpr std::size_t buf_count_default = 16;    // Default value for the concurrent buffer count.
 
@@ -184,6 +182,54 @@ public:
 };
 
 
+// A managed collection of buffers of type `T_buf_`, ready to be used by
+// multiple threads. Each buffer is either "free" or "full".
+template <typename T_buf_>
+class Buffer_Pool
+{
+private:
+
+    Object_Pool<T_buf_> free_pool;  // Buffers available to be used.
+    Object_Pool<T_buf_> full_pool;  // Buffers full of data.
+
+
+public:
+
+    Buffer_Pool() {}
+
+
+    // Returns the number of available free buffers.
+    std::size_t free_buf_count() const { return free_pool.size(); }
+
+
+    // Returns the number of available data-full buffers.
+    std::size_t full_buf_count() const { return full_pool.size(); }
+
+
+    // Adds the buffer `buf` to the pool.
+    void add_buf(const T_buf_& buf) { free_pool.push(buf); }
+
+
+    // Tries to fetch a free buffer to `buf` from the pool. Returns `true` iff
+    // such a buffer is found.
+    bool fetch_free_buf(T_buf_& buf) { return free_pool.fetch(buf); }
+
+
+    // Returns the buffer `buf` to the pool, presumably filled with data to be
+    // used later.
+    void return_full_buffer(const T_buf_& buf) { full_pool.push(buf); }
+
+
+    // Tries to fetch a data-full buffer to `buf` from the pool. Returns `true`
+    // iff such a buffer is found.
+    bool fetch_full_buf(T_buf_& buf) { return full_pool.fetch(buf); }
+
+
+    // Returns the buffer `buf` to the pool, to be reused later.
+    void return_free_buf(const T_buf_& buf) { free_pool.push(buf); }
+};
+
+
 template <typename T_key_, typename T_val_, typename T_hasher_>
 inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::Key_Value_Collator(const std::string& work_file_pref, const std::size_t buf_count):
     hash(),
@@ -203,7 +249,7 @@ inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::Key_Value_Collator(const s
     }
 
     for(std::size_t i = 0; i < buf_count; ++i)
-        free_buf_pool.push(new buf_t());
+        buf_pool.add_buf(new buf_t());
 
     mapper = new std::thread(&Key_Value_Collator<T_key_, T_val_, T_hasher_>::map, this);
 }
@@ -212,7 +258,7 @@ inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::Key_Value_Collator(const s
 template <typename T_key_, typename T_val_, typename T_hasher_>
 inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::~Key_Value_Collator()
 {
-    if(!full_buf_pool.empty() || free_buf_pool.size() != buf_count || mapper->joinable())
+    if(buf_pool.full_buf_count() > 0 || buf_pool.free_buf_count() != buf_count || mapper->joinable())
     {
         std::cerr << "Collator destructed while unprocessed buffers remained. Aborting.\n";
         std::exit(EXIT_FAILURE);
@@ -221,9 +267,9 @@ inline Key_Value_Collator<T_key_, T_val_, T_hasher_>::~Key_Value_Collator()
 
     // Release memory of the partition-buffers.
     buf_t* buf_p = nullptr;
-    while(!free_buf_pool.empty())
+    while(buf_pool.free_buf_count() > 0)
     {
-        free_buf_pool.fetch(buf_p);
+        buf_pool.fetch_free_buf(buf_p);
         delete buf_p;
     }
 
@@ -244,7 +290,7 @@ template <typename T_key_, typename T_val_, typename T_hasher_>
 inline typename Key_Value_Collator<T_key_, T_val_, T_hasher_>::buf_t& Key_Value_Collator<T_key_, T_val_, T_hasher_>::get_buffer()
 {
     buf_t* buf_p;
-    while(!free_buf_pool.fetch(buf_p));
+    while(!buf_pool.fetch_free_buf(buf_p));
 
     return *buf_p;
 }
@@ -253,7 +299,7 @@ inline typename Key_Value_Collator<T_key_, T_val_, T_hasher_>::buf_t& Key_Value_
 template <typename T_key_, typename T_val_, typename T_hasher_>
 inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::return_buffer(buf_t& buf)
 {
-    full_buf_pool.push(&buf);
+    buf_pool.return_full_buffer(&buf);
 }
 
 
@@ -269,13 +315,13 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::map()
 {
     buf_t* buf_p;
 
-    while(stream_incoming || !full_buf_pool.empty())
-        if(full_buf_pool.fetch(buf_p))
+    while(stream_incoming || buf_pool.full_buf_count() > 0)
+        if(buf_pool.fetch_full_buf(buf_p))
         {
             map_buffer(*buf_p);
 
             buf_p->clear();
-            free_buf_pool.push(buf_p);
+            buf_pool.return_free_buf(buf_p);
         }
 }
 
