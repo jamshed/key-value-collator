@@ -6,14 +6,17 @@
 
 #include "Spin_Lock.hpp"
 
+#include <sys/types.h>
 #include <cstdint>
 #include <cstddef>
 #include <vector>
 #include <string>
 #include <atomic>
 #include <utility>
-#include <fstream>
 #include <cstdlib>
+#include <algorithm>
+#include <sys/stat.h>
+#include <fstream>
 #include <cstdio>
 #include <iostream>
 #include <thread>
@@ -50,7 +53,7 @@ private:
     static constexpr char work_file_pref_default[] = ".";   // Default value for the temporary working files' prefixes.
     static constexpr char partition_file_ext[] = ".part";   // File extensions of the temporary partition files.
 
-    static constexpr std::size_t partition_count = (1 << 7);    // Number of partitions for the keys.
+    static constexpr std::size_t partition_count = (1 << 9);    // Number of partitions for the keys.
     static constexpr std::size_t partition_buf_mem = (1LU * 1024 * 1024);   // Maximum memory for a partition buffer: 1MB.
     static constexpr std::size_t partition_buf_elem_th = partition_buf_mem / sizeof(key_val_pair_t);    // Maximum number of pairs to keep in a partition buffer.
 
@@ -110,6 +113,10 @@ public:
     // remaining in-memory content to disk. All deposit operations from the
     // producers must be made before invoking this.
     void close_deposit_stream();
+
+    // Collates the deposited key-value pairs, using at most `thread_count`
+    // processor-threads.
+    void collate(uint32_t thread_count) const;
 };
 
 
@@ -333,6 +340,81 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::close_deposit_stream(
         buf_t().swap(partition_buf[p_id]);
 
         partition_file[p_id].close();
+    }
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_t thread_count) const
+{
+    std::vector<std::thread> worker;
+    for(uint32_t t_id = 0; t_id < thread_count; ++t_id)
+        worker.emplace_back(
+            [this](const uint32_t init_id, const uint32_t stride)
+            // Collates each partition with IDs starting from `init_id and at stride lengths `stride`.
+            {
+                const auto file_size = [](const char* const file_name) -> off_t
+                    {
+                        struct stat st;
+                        return stat(file_name, &st) == 0 ? st.st_size : 0;
+                    };
+
+                // Get the maximum partition size for this thread.
+                off_t buf_sz = 0; // in bytes
+                for(uint32_t p_id = init_id; p_id < partition_count; p_id += stride)
+                    buf_sz = std::max(buf_sz, file_size(partition_file_path(p_id).c_str()));
+
+                key_val_pair_t* const p_data = static_cast<key_val_pair_t*>(std::malloc(buf_sz));
+                for(uint32_t p_id = init_id; p_id < partition_count; p_id += stride)
+                {
+                    // Read in the partition data to memory.
+
+                    const std::string p_path = partition_file_path(p_id);
+                    const auto p_bytes = file_size(p_path.c_str());
+
+                    std::ifstream input(p_path.c_str(), std::ios::in | std::ios::binary);
+                    if(!input.read(reinterpret_cast<char*>(p_data), p_bytes))
+                    {
+                        std::cerr << "Error reading the partition files. Aborting.\n";
+                        std::exit(EXIT_FAILURE);
+                    }
+
+                    input.close();
+
+
+                    // Sort the partition data.
+
+                    const std::size_t elem_count = p_bytes / sizeof(key_val_pair_t);
+                    std::sort(p_data, p_data + elem_count);
+
+
+                    // Write the partition data back to disk.
+
+                    std::ofstream output(p_path.c_str(), std::ios::out | std::ios::binary);
+                    if(!output.write(reinterpret_cast<const char*>(p_data), p_bytes))
+                    {
+                        std::cerr << "Error writing to the partition files. Aborting.\n";
+                        std::exit(EXIT_FAILURE);
+                    }
+
+                    output.close();
+                }
+
+                std::free(p_data);
+            },
+            t_id, thread_count
+        );
+
+
+    for(uint32_t t_id = 0; t_id < thread_count; ++t_id)
+    {
+        if(!worker[t_id].joinable())
+        {
+            std::cerr << "Early termination encountered for a collator thread. Aborting.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        worker[t_id].join();
     }
 }
 
