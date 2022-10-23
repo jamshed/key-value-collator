@@ -24,7 +24,7 @@ int main(int argc, char* argv[])
     typedef std::size_t val_t;
     typedef key_value_collator::Identity_Functor<key_t> hasher_t;
     typedef key_value_collator::Key_Value_Collator<key_t, val_t, hasher_t> kv_collator_t;
-    kv_collator_t kv_collator(argv[1]);
+    kv_collator_t kv_collator(work_pref, thread_count * 2);
 
     const auto t_0 = now();
     std::vector<std::thread> worker;
