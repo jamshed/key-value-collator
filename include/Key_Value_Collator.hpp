@@ -21,6 +21,7 @@
 #include <iostream>
 #include <thread>
 #include <cassert>
+#include <chrono>
 
 
 // =============================================================================
@@ -66,6 +67,16 @@ private:
 
     std::thread* mapper;    // The background thread mapping key-value pairs to corresponding partitions.
     std::atomic<bool> stream_incoming;  // Flag denoting whether the incoming key-value streams have ended or not.
+
+
+    // Timing variables for performance diagnosis.
+    static constexpr auto now = std::chrono::high_resolution_clock::now;
+    static double duration(const std::chrono::nanoseconds& d) { return std::chrono::duration_cast<std::chrono::duration<double>>(d).count(); }
+    mutable double data_write_time_1 = 0;
+    mutable double data_write_time_2 = 0;
+    mutable double data_read_time = 0;
+    mutable double data_sort_time = 0;
+
 
 
     // Returns the disk-file path for the partition `p_id`.
@@ -347,11 +358,15 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::flush(const std::size
 {
     auto& buf  = partition_buf[p_id];
     auto& file = partition_file[p_id];
+    const auto t0 = now();
     if(!file.write(reinterpret_cast<const char*>(buf.data()), buf.size() * sizeof(key_val_pair_t)))
     {
         std::cerr << "Error writing to partition file(s) of the collator. Aborting.\n";
         std::exit(EXIT_FAILURE);
     }
+
+    const auto t1 = now();
+    data_write_time_1 += duration(t1 - t0);
 
     buf.clear();
 }
@@ -385,8 +400,13 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::close_deposit_stream(
 
         buf_t().swap(partition_buf[p_id]);
 
+        const auto t0 = now();
         partition_file[p_id].close();
+        const auto t1 = now();
+        data_write_time_1 += duration(t1 - t0);
     }
+
+    std::cout << "Write time: " << data_write_time_1 << "\n";
 }
 
 
@@ -394,9 +414,10 @@ template <typename T_key_, typename T_val_, typename T_hasher_>
 inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_t thread_count) const
 {
     std::vector<std::thread> worker;
+    Spin_Lock lock;
     for(uint32_t t_id = 0; t_id < thread_count; ++t_id)
         worker.emplace_back(
-            [this](const uint32_t init_id, const uint32_t stride)
+            [this, &lock](const uint32_t init_id, const uint32_t stride)
             // Collates each partition with IDs starting from `init_id and at stride lengths `stride`.
             {
                 const auto file_size = [](const char* const file_name) -> off_t
@@ -418,6 +439,8 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
                     const std::string p_path = partition_file_path(p_id);
                     const auto p_bytes = file_size(p_path.c_str());
 
+                    const auto tr0 = now();
+                    lock.lock();
                     std::ifstream input(p_path.c_str(), std::ios::in | std::ios::binary);
                     if(!input.read(reinterpret_cast<char*>(p_data), p_bytes))
                     {
@@ -426,16 +449,27 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
                     }
 
                     input.close();
+                    const auto tr1 = now();
+
+                    data_read_time += duration(tr1 - tr0);
+                    lock.unlock();
 
 
                     // Sort the partition data.
 
+                    const auto ts0 = now();
                     const std::size_t elem_count = p_bytes / sizeof(key_val_pair_t);
                     std::sort(p_data, p_data + elem_count);
+                    const auto ts1 = now();
+
+                    lock.lock();
+                    data_sort_time += duration(ts1 - ts0);
+                    lock.unlock();
 
 
                     // Write the partition data back to disk.
 
+                    const auto t0 = now();
                     std::ofstream output(p_path.c_str(), std::ios::out | std::ios::binary);
                     if(!output.write(reinterpret_cast<const char*>(p_data), p_bytes))
                     {
@@ -444,6 +478,11 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
                     }
 
                     output.close();
+
+                    const auto t1 = now();
+                    lock.lock();
+                    data_write_time_2 += duration(t1 - t0);
+                    lock.unlock();
                 }
 
                 std::free(p_data);
@@ -462,6 +501,11 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
 
         worker[t_id].join();
     }
+
+
+    std::cout << "Read time: " << data_read_time << "\n";
+    std::cout << "Sort time: " << data_sort_time << "\n";
+    std::cout << "Write time: " << data_write_time_2 << "\n";
 }
 
 
