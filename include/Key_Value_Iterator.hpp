@@ -34,10 +34,11 @@ private:
     std::FILE* file_ptr;    // Pointer to the current (collated) file.
 
     std::size_t pos;    // Absolute index (sequential ID of the key-block) into the collated collection.
-    key_val_pair_t* buf;    // Buffer to read in chunks of key-value pairs.
+
+    static constexpr std::size_t buf_sz = 5lu * 1024lu * 1024lu / sizeof(key_val_pair_t);   // Size of the buffer in elements: total 5MB.
+    key_val_pair_t buf[buf_sz]; // Buffer to read in chunks of key-value pairs.
     std::size_t buf_elem_count; // Number of pairs currently in the buffer.
     std::size_t buf_idx;    // Index of the next pair to process from the buffer.
-    static constexpr std::size_t buf_sz = 5lu * 1024lu * 1024lu / sizeof(key_val_pair_t);   // Size of the buffer in elements: total 5MB.
 
     key_val_pair_t elem;    // Current pair to process.
 
