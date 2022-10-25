@@ -40,7 +40,7 @@ private:
     std::size_t pos;    // Absolute index (sequential ID of the key-block) into the collated collection.
 
     static constexpr std::size_t buf_sz = 5lu * 1024lu * 1024lu / sizeof(key_val_pair_t);   // Size of the buffer in elements: total 5MB.
-    key_val_pair_t buf[buf_sz]; // Buffer to read in chunks of key-value pairs.
+    key_val_pair_t* buf;    // Buffer to read in chunks of key-value pairs.
     std::size_t buf_elem_count; // Number of pairs currently in the buffer.
     std::size_t buf_idx;    // Index of the next pair to process from the buffer.
 
@@ -78,7 +78,7 @@ public:
     ~Key_Value_Iterator();
 
     // Returns the key of the current pair.
-    T_key_ operator*() const;
+    T_key_ operator*();
 
     // Advances the iterator by one key-block.
     Key_Value_Iterator& operator++();
@@ -105,13 +105,10 @@ inline Key_Value_Iterator<T_key_, T_val_>::Key_Value_Iterator(const std::string&
     file_ptr(nullptr),
     curr_p_id(0),
     pos(0),
+    buf(nullptr),
     buf_elem_count(0),
     buf_idx(0)
-{
-    set_file_handle(0);
-
-    advance();
-}
+{}
 
 
 template <typename T_key_, typename T_val_>
@@ -119,12 +116,17 @@ inline Key_Value_Iterator<T_key_, T_val_>::~Key_Value_Iterator()
 {
     if(file_ptr != nullptr)
         std::fclose(file_ptr);
+
+    std::free(buf);
 }
 
 
 template <typename T_key_, typename T_val_>
-inline T_key_ Key_Value_Iterator<T_key_, T_val_>::operator*() const
+inline T_key_ Key_Value_Iterator<T_key_, T_val_>::operator*()
 {
+    if(buf == nullptr)
+        advance();
+
     return elem.first;
 }
 
@@ -141,6 +143,12 @@ inline Key_Value_Iterator<T_key_, T_val_>& Key_Value_Iterator<T_key_, T_val_>::o
 template <typename T_key_, typename T_val_>
 inline void Key_Value_Iterator<T_key_, T_val_>::advance()
 {
+    if(buf == nullptr)
+    {
+        set_file_handle(0);
+        buf = static_cast<key_val_pair_t*>(std::malloc(buf_sz * sizeof(key_val_pair_t)));
+    }
+
     while(buf_idx >= buf_elem_count)
     {
         buf_elem_count = std::fread(static_cast<void*>(buf), sizeof(key_val_pair_t), buf_sz, file_ptr);
@@ -166,6 +174,9 @@ inline void Key_Value_Iterator<T_key_, T_val_>::advance()
 template <typename T_key_, typename T_val_>
 inline void Key_Value_Iterator<T_key_, T_val_>::advance_key_block()
 {
+    if(buf == nullptr)
+        advance();
+
     const T_key_ key = elem.first;
     while(file_ptr != nullptr && elem.first == key)
         advance();
