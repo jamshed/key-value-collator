@@ -23,7 +23,7 @@ namespace key_value_collator
 template <typename T_key_, typename T_val_>
 class Key_Value_Iterator
 {
-    template <T_key_, T_val_, typename T_hasher_> friend class Key_Value_Collator;
+    template <typename, typename, typename> friend class Key_Value_Collator;
 
     typedef std::pair<T_key_, T_val_> key_val_pair_t;
 
