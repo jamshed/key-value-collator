@@ -72,7 +72,8 @@ private:
 
 public:
 
-    // Copy constructs an iterator from the iterator `other`.
+    // Copy constructs an iterator from the iterator `other`. Only usable with
+    // `other` iterators that are unmodified results of `begin()` and `end()`.
     Key_Value_Iterator(const Key_Value_Iterator& other);
 
     // Destructs the iterator.
@@ -111,6 +112,26 @@ inline Key_Value_Iterator<T_key_, T_val_>::Key_Value_Iterator(const std::string&
     buf_elem_count(0),
     buf_idx(0)
 {}
+
+
+template <typename T_key_, typename T_val_>
+inline Key_Value_Iterator<T_key_, T_val_>::Key_Value_Iterator(const Key_Value_Iterator& other):
+    work_pref(other.work_pref),
+    partition_count(other.partition_count),
+    file_ptr(other.file_ptr),
+    curr_p_id(other.curr_p_id),
+    pos(other.pos),
+    at_end(other.at_end),
+    buf(nullptr),
+    buf_elem_count(other.buf_elem_count),
+    buf_idx(other.buf_idx)
+{
+    if(other.file_ptr != nullptr || other.buf != nullptr)
+    {
+        std::cerr << "Cannot copy key-value iterator that is in use. Aborting.\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
 
 
 template <typename T_key_, typename T_val_>
