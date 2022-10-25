@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <string>
 #include <utility>
+#include <cstdlib>
 #include <cstdio>
+#include <iostream>
 
 
 // =============================================================================
@@ -72,8 +74,11 @@ public:
     // Copy constructs an iterator from the iterator `other`.
     Key_Value_Iterator(const Key_Value_Iterator& other);
 
+    // Destructs the iterator.
+    ~Key_Value_Iterator();
+
     // Returns the key of the current pair.
-    T_key_ operator*();
+    T_key_ operator*() const;
 
     // Advances the iterator by one key-block.
     Key_Value_Iterator& operator++();
@@ -91,6 +96,95 @@ public:
     // collection has been reached. It is thread-safe.
     std::size_t advance(key_val_pair_t* buf, std::size_t count);
 };
+
+
+template <typename T_key_, typename T_val_>
+inline Key_Value_Iterator<T_key_, T_val_>::Key_Value_Iterator(const std::string& work_pref, const std::size_t partition_count):
+    work_pref(work_pref),
+    partition_count(partition_count),
+    file_ptr(nullptr),
+    curr_p_id(0),
+    pos(0),
+    buf_elem_count(0),
+    buf_idx(0)
+{
+    set_file_handle(0);
+
+    advance();
+}
+
+
+template <typename T_key_, typename T_val_>
+inline Key_Value_Iterator<T_key_, T_val_>::~Key_Value_Iterator()
+{
+    if(file_ptr != nullptr)
+        std::fclose(file_ptr);
+}
+
+
+template <typename T_key_, typename T_val_>
+inline T_key_ Key_Value_Iterator<T_key_, T_val_>::operator*() const
+{
+    return elem.first;
+}
+
+
+template <typename T_key_, typename T_val_>
+inline Key_Value_Iterator<T_key_, T_val_>& Key_Value_Iterator<T_key_, T_val_>::operator++()
+{
+    advance_key_block();
+
+    return *this;
+}
+
+
+template <typename T_key_, typename T_val_>
+inline void Key_Value_Iterator<T_key_, T_val_>::advance()
+{
+    while(buf_idx >= buf_elem_count)
+    {
+        buf_elem_count = std::fread(static_cast<void*>(buf), sizeof(key_val_pair_t), buf_sz, file_ptr);
+        buf_idx = 0;
+
+        if(buf_elem_count == 0)
+        {
+            if(++curr_p_id == partition_count)
+            {
+                file_ptr = nullptr;
+                return;
+            }
+
+            set_file_handle(curr_p_id);
+        }
+    }
+
+    elem = buf[buf_idx++];
+    pos++;
+}
+
+
+template <typename T_key_, typename T_val_>
+inline void Key_Value_Iterator<T_key_, T_val_>::advance_key_block()
+{
+    const T_key_ key = elem.first;
+    while(file_ptr != nullptr && elem.first == key)
+        advance();
+}
+
+
+template <typename T_key_, typename T_val_>
+inline void Key_Value_Iterator<T_key_, T_val_>::set_file_handle(const std::size_t p_id)
+{
+    if(file_ptr != nullptr)
+        std::fclose(file_ptr);
+
+    file_ptr = std::fopen(partition_file_path(p_id).c_str(), "rb");
+    if(file_ptr == nullptr)
+    {
+        std::cerr << "Error opening partition files. Aborting.\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
 
 }
 
