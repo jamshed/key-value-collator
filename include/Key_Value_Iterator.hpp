@@ -38,6 +38,7 @@ private:
     std::size_t curr_p_id;  // ID of the current partition being iterated over.
 
     std::size_t pos;    // Absolute index (sequential ID of the key-block) into the collated collection.
+    bool at_end;    // Whether the iterator is at the end of the collection.
 
     static constexpr std::size_t buf_sz = 5lu * 1024lu * 1024lu / sizeof(key_val_pair_t);   // Size of the buffer in elements: total 5MB.
     key_val_pair_t* buf;    // Buffer to read in chunks of key-value pairs.
@@ -51,7 +52,7 @@ private:
 
     // Constructs an iterator for a key-value collator that has its collated
     // files at path prefix `work_pref` and used `partition_count` partitions.
-    Key_Value_Iterator(const std::string& work_pref, std::size_t partition_count);
+    Key_Value_Iterator(const std::string& work_pref, std::size_t partition_count, bool at_end = false);
 
     // Returns the disk-file path for the partition `p_id`.
     // TODO: think management of codes repeated between collator and iterator.
@@ -99,12 +100,13 @@ public:
 
 
 template <typename T_key_, typename T_val_>
-inline Key_Value_Iterator<T_key_, T_val_>::Key_Value_Iterator(const std::string& work_pref, const std::size_t partition_count):
+inline Key_Value_Iterator<T_key_, T_val_>::Key_Value_Iterator(const std::string& work_pref, const std::size_t partition_count, const bool at_end):
     work_pref(work_pref),
     partition_count(partition_count),
     file_ptr(nullptr),
     curr_p_id(0),
     pos(0),
+    at_end(at_end),
     buf(nullptr),
     buf_elem_count(0),
     buf_idx(0)
@@ -159,6 +161,7 @@ inline void Key_Value_Iterator<T_key_, T_val_>::advance()
             if(++curr_p_id == partition_count)
             {
                 file_ptr = nullptr;
+                at_end = true;
                 return;
             }
 
