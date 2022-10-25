@@ -30,8 +30,10 @@ class Key_Value_Iterator
 private:
 
     const std::string work_pref;    // Path to the working files used by the collator.
+    const std::size_t partition_count;  // Number of partitions used by the collator.
 
-    std::FILE* file_ptr;    // Pointer to the current (collated) file.
+    std::FILE* file_ptr;    // Pointer to the current (collated) partition file.
+    std::size_t curr_p_id;  // ID of the current partition being iterated over.
 
     std::size_t pos;    // Absolute index (sequential ID of the key-block) into the collated collection.
 
@@ -45,20 +47,30 @@ private:
     Spin_Lock lock; // Mutually-exclusive access lock for the iterator users.
 
 
-    // Constructs a null iterator.
-    Key_Value_Iterator();
+    // Constructs an iterator for a key-value collator that has its collated
+    // files at path prefix `work_pref` and used `partition_count` partitions.
+    Key_Value_Iterator(const std::string& work_pref, std::size_t partition_count);
 
-    // Constructs an iterator for the collated files at path `work_pref`.
-    Key_Value_Iterator(const std::string& work_pref);
+    // Returns the disk-file path for the partition `p_id`.
+    // TODO: think management of codes repeated between collator and iterator.
+    const std::string partition_file_path(std::size_t p_id) const { return work_pref + "." + std::to_string(p_id) + ".part"; }
+
+    // Sets the file-handle to the file of the partition with ID `p_id`.
+    void set_file_handle(std::size_t p_id);
+
+    // Advances in the collection by one key-value pair. Sets the current file-
+    // handle to null if the end of the collection has been reached.
+    void advance();
+
+    // Advances in the collection by one key-block, i.e. passes by all the
+    // pairs that have the same key as the current one.
+    void advance_key_block();
 
 
 public:
 
     // Copy constructs an iterator from the iterator `other`.
     Key_Value_Iterator(const Key_Value_Iterator& other);
-
-    // Destructs the iterator.
-    ~Key_Value_Iterator();
 
     // Returns the key of the current pair.
     T_key_ operator*();
