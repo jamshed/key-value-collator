@@ -163,6 +163,24 @@ inline Key_Value_Iterator<T_key_, T_val_>& Key_Value_Iterator<T_key_, T_val_>::o
 }
 
 
+
+template <typename T_key_, typename T_val_>
+inline bool Key_Value_Iterator<T_key_, T_val_>::operator==(const Key_Value_Iterator& rhs) const
+{
+    if(file_ptr == nullptr || rhs.file_ptr == nullptr)
+        return file_ptr == nullptr && rhs.file_ptr == nullptr && at_end == rhs.at_end;
+
+    return file_ptr == rhs.file_ptr && pos == rhs.pos;
+}
+
+
+template <typename T_key_, typename T_val_>
+inline bool Key_Value_Iterator<T_key_, T_val_>::operator!=(const Key_Value_Iterator& rhs) const
+{
+    return !this->operator==(rhs);
+}
+
+
 template <typename T_key_, typename T_val_>
 inline void Key_Value_Iterator<T_key_, T_val_>::advance()
 {
