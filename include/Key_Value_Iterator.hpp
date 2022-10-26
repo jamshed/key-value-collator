@@ -97,6 +97,10 @@ public:
     // number of elements read, which is 0 in the case when the end of the
     // collection has been reached. It is thread-safe.
     std::size_t advance(key_val_pair_t* buf, std::size_t count);
+
+    // Returns the absolute key-value pair index of the iterator's current
+    // position.
+    std::size_t pair_index() const { return pos; }
 };
 
 
