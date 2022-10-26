@@ -77,12 +77,8 @@ bool is_correct(const std::string& work_pref, const uint32_t thread_count)
 }
 
 
-int main(int argc, char* argv[])
+void perf_check(const std::string& work_pref, const uint32_t thread_count)
 {
-    (void)argc;
-    const std::string work_pref(argv[1]);
-    const uint32_t thread_count = std::atoi(argv[2]);
-
     // typedef std::chrono::high_resolution_clock::time_point time_point_t;
     constexpr auto now = std::chrono::high_resolution_clock::now;
     const auto duration = [](const std::chrono::nanoseconds& d) { return std::chrono::duration_cast<std::chrono::duration<double>>(d).count(); };
@@ -132,6 +128,16 @@ int main(int argc, char* argv[])
     kv_collator.collate(thread_count);
     const auto t_2 = now();
     std::cout << "Collation done in " << duration(t_2 - t_1) << " seconds.\n";
+}
+
+
+int main(int argc, char* argv[])
+{
+    (void)argc;
+    const std::string work_pref(argv[1]);
+    const uint32_t thread_count = std::atoi(argv[2]);
+
+    perf_check(work_pref, thread_count);
 
     std::cout << "Collated collection is " << (is_correct(work_pref, thread_count) ? "correct" : "incorrect") << "\n";
 
