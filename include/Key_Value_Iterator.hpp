@@ -203,6 +203,8 @@ inline void Key_Value_Iterator<T_key_, T_val_>::advance()
         {
             if(++curr_p_id == partition_count)
             {
+                std::fclose(file_ptr);
+
                 file_ptr = nullptr;
                 at_end = true;
                 return;
