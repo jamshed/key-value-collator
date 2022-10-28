@@ -439,6 +439,9 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
 
                     // Write the partition data back to disk.
 
+                    std::remove(p_path.c_str());    // Remove the file, as ext4 fs driver close() waits before data
+                                                    // are really written to the disk when done on an *existing* i-node.
+                                                    // https://superuser.com/questions/865710/write-to-newfile-vs-overwriting-performance-issue
                     std::ofstream output(p_path.c_str(), std::ios::out | std::ios::binary);
                     if(!output.write(reinterpret_cast<const char*>(p_data), p_bytes))
                     {
