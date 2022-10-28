@@ -5,6 +5,7 @@
 
 
 #include "Spin_Lock.hpp"
+#include "Key_Value_Iterator.hpp"
 
 #include <sys/types.h>
 #include <cstdint>
@@ -42,6 +43,8 @@ public:
 
     typedef std::pair<T_key_, T_val_> key_val_pair_t;
     typedef std::vector<key_val_pair_t> buf_t;  // Type of the data buffers.
+
+    typedef Key_Value_Iterator<T_key_, T_val_> iter_t;  // Type of the collation iterator.
 
 
 private:
@@ -462,6 +465,20 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
 
         worker[t_id].join();
     }
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline Key_Value_Iterator<T_key_, T_val_> Key_Value_Collator<T_key_, T_val_, T_hasher_>::begin() const
+{
+    return iter_t(work_file_pref, partition_count);
+}
+
+
+template <typename T_key_, typename T_val_, typename T_hasher_>
+inline Key_Value_Iterator<T_key_, T_val_> Key_Value_Collator<T_key_, T_val_, T_hasher_>::end() const
+{
+    return iter_t(work_file_pref, partition_count, true);
 }
 
 
