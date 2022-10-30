@@ -93,14 +93,14 @@ public:
     // of some collection(s).
     bool operator!=(const Key_Value_Iterator& rhs) const;
 
-    // Tries to read-in at most `count` key-value pairs into `buf`. Returns the
-    // number of elements read, which is 0 in the case when the end of the
-    // collection has been reached. It is thread-safe.
-    std::size_t advance(key_val_pair_t* buf, std::size_t count);
-
     // Returns the absolute key-value pair index of the iterator's current
     // position.
     std::size_t pair_index() const { return pos; }
+
+    // Tries to read in at most `count` key-value pairs into `buf`. Returns the
+    // number of pairs read, which is 0 in case when the end of the collection
+    // has been reached. It is thread-safe.
+    std::size_t read(key_val_pair_t* buf, std::size_t count);
 };
 
 
@@ -182,6 +182,43 @@ template <typename T_key_, typename T_val_>
 inline bool Key_Value_Iterator<T_key_, T_val_>::operator!=(const Key_Value_Iterator& rhs) const
 {
     return !this->operator==(rhs);
+}
+
+
+template <typename T_key_, typename T_val_>
+inline std::size_t Key_Value_Iterator<T_key_, T_val_>::read(key_val_pair_t* const buf, const std::size_t count)
+{
+    lock.lock();
+
+    if(file_ptr == nullptr && !at_end)
+        set_file_handle(0);
+
+    std::size_t buf_elem_count = 0;
+    while(buf_elem_count == 0)
+    {
+        buf_elem_count = (file_ptr != nullptr ?
+                            std::fread(static_cast<void*>(buf), sizeof(key_val_pair_t), count, file_ptr) : 0);
+
+        if(buf_elem_count == 0)
+        {
+            if(++curr_p_id == partition_count)
+            {
+                std::fclose(file_ptr);
+
+                file_ptr = nullptr;
+                at_end = true;
+                break;
+            }
+
+            set_file_handle(curr_p_id);
+        }
+    }
+
+    pos += buf_elem_count;
+
+    lock.unlock();
+
+    return buf_elem_count;
 }
 
 
