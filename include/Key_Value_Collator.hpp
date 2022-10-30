@@ -118,6 +118,12 @@ public:
     // Collates the deposited key-value pairs, using at most `thread_count`
     // processor-threads.
     void collate(uint32_t thread_count) const;
+
+    // Returns an iterator pointing at the beginning of the collection.
+    iter_t begin() const;
+
+    // Returns an iterator pointing at the end of the collection.
+    iter_t end() const;
 };
 
 
@@ -400,7 +406,7 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
     for(uint32_t t_id = 0; t_id < thread_count; ++t_id)
         worker.emplace_back(
             [this](const uint32_t init_id, const uint32_t stride)
-            // Collates each partition with IDs starting from `init_id and at stride lengths `stride`.
+            // Collates each partition with IDs starting from `init_id` and at stride lengths `stride`.
             {
                 const auto file_size = [](const char* const file_name) -> off_t
                     {
