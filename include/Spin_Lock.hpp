@@ -7,6 +7,10 @@
 #include <atomic>
 
 
+namespace key_value_collator
+{
+
+
 // A lightweight lock-free mutex class.
 // It is based on `std::atomic_flag`, which is guaranteed to be a lock-free atomic construct .
 // Reference: https://en.cppreference.com/w/cpp/atomic/atomic_flag
@@ -45,6 +49,9 @@ inline void Spin_Lock::unlock()
     // ensuring that memory-access instructions before an `unlock` invokation stays before it.
 
     lock_.clear(std::memory_order_release);
+}
+
+
 }
 
 
