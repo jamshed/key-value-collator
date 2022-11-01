@@ -104,6 +104,9 @@ public:
 
     ~Key_Value_Collator();
 
+    class Aggregate_Result;
+    mutable Aggregate_Result agg_result;
+
     // Returns an available free buffer.
     buf_t& get_buffer();
 
@@ -116,14 +119,19 @@ public:
     void close_deposit_stream();
 
     // Collates the deposited key-value pairs, using at most `thread_count`
-    // processor-threads.
-    void collate(uint32_t thread_count) const;
+    // processor-threads. Also generates an aggregate result of the keys
+    // iff `aggregate = true`.
+    void collate(uint32_t thread_count, bool aggregate = false) const;
 
     // Returns an iterator pointing at the beginning of the collection.
     iter_t begin() const;
 
     // Returns an iterator pointing at the end of the collection.
     iter_t end() const;
+
+    std::size_t unique_key_count() const { return agg_result.unique_key_count; }    // Returns the number of unique keys.
+    std::size_t pair_count() const { return agg_result.pair_count; }    // Returns the total number of key-value pairs.
+    std::size_t mode_frequency() const { return agg_result.mode_count; }    // Returns the number of pairs with a most frequent key.
 };
 
 
@@ -400,14 +408,17 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::close_deposit_stream(
 
 
 template <typename T_key_, typename T_val_, typename T_hasher_>
-inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_t thread_count) const
+inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_t thread_count, const bool aggregate) const
 {
     std::vector<std::thread> worker;
+    std::vector<Aggregate_Result> worker_aggregate(thread_count, Aggregate_Result());
     for(uint32_t t_id = 0; t_id < thread_count; ++t_id)
         worker.emplace_back(
-            [this](const uint32_t init_id, const uint32_t stride)
+            [this, aggregate](const uint32_t init_id, const uint32_t stride, Aggregate_Result& result)
             // Collates each partition with IDs starting from `init_id` and at stride lengths `stride`.
             {
+                Aggregate_Result result_local;  // To avoid possible false-sharing.
+
                 const auto file_size = [](const char* const file_name) -> off_t
                     {
                         struct stat st;
@@ -437,10 +448,32 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
                     input.close();
 
 
-                    // Sort the partition data.
-
+                    // Sort the partition data and optionally get aggregate statistics.
                     const std::size_t elem_count = p_bytes / sizeof(key_val_pair_t);
                     std::sort(p_data, p_data + elem_count);
+
+                    if(aggregate && elem_count > 0) // Aggregate results from this partition.
+                    {
+                        T_key_ curr_key = p_data[0].first;
+                        std::size_t curr_key_freq = 1;
+                        result_local.unique_key_count++;
+
+                        if(result_local.mode_count < 1)
+                            result_local.mode_count = 1;
+
+                        for(std::size_t i = 1; i < elem_count; ++i)
+                            if(p_data[i].first != curr_key)
+                            {
+                                curr_key = p_data[i].first;
+                                curr_key_freq = 1;
+                                result_local.unique_key_count++;
+                            }
+                            else
+                                if(result_local.mode_count < ++curr_key_freq)
+                                    result_local.mode_count = curr_key_freq;
+
+                        result_local.pair_count += elem_count;
+                    }
 
 
                     // Write the partition data back to disk.
@@ -459,8 +492,10 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
                 }
 
                 std::free(p_data);
+
+                result = result_local;
             },
-            t_id, thread_count
+            t_id, thread_count, std::ref(worker_aggregate[t_id])
         );
 
 
@@ -473,6 +508,7 @@ inline void Key_Value_Collator<T_key_, T_val_, T_hasher_>::collate(const uint32_
         }
 
         worker[t_id].join();
+        agg_result.aggregate(worker_aggregate[t_id]);
     }
 }
 

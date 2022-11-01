@@ -126,9 +126,13 @@ void perf_check(const std::string& work_pref, const uint32_t thread_count)
     const auto t_1 = now();
     std::cout << "Deposited all key-val pairs in " << duration(t_1 - t_0) << " seconds.\n";
 
-    kv_collator.collate(thread_count);
+    kv_collator.collate(thread_count, true);
     const auto t_2 = now();
     std::cout << "Collation done in " << duration(t_2 - t_1) << " seconds.\n";
+
+    std::cout << "Total key-value pair count:   " << kv_collator.pair_count() << "\n";
+    std::cout << "Unique count:                 " << kv_collator.unique_key_count() << "\n";
+    std::cout << "Frequency of a mode key:      " << kv_collator.mode_frequency() << "\n";
 }
 
 
@@ -216,11 +220,11 @@ int main(int argc, char* argv[])
     const std::string work_pref(argv[1]);
     const uint32_t thread_count = std::atoi(argv[2]);
 
-    // perf_check(work_pref, thread_count);
+    perf_check(work_pref, thread_count);
 
     // std::cout << "Collated collection is " << (is_correct(work_pref, thread_count) ? "correct" : "incorrect") << "\n";
 
-    std::cout << "Collated collection is " << (is_correct_batched_read(work_pref, thread_count) ? "correct" : "incorrect") << "\n";
+    // std::cout << "Collated collection is " << (is_correct_batched_read(work_pref, thread_count) ? "correct" : "incorrect") << "\n";
 
     return 0;
 }
