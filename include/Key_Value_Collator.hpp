@@ -495,6 +495,36 @@ template <typename T_key_, typename T_val_, typename T_hasher_>
 const char Key_Value_Collator<T_key_, T_val_, T_hasher_>::partition_file_ext[];
 
 
+// A class to pack aggregation results from `Key_Value_Collator`.
+template <typename T_key_, typename T_val_, typename T_hasher_>
+class Key_Value_Collator<T_key_, T_val_, T_hasher_>::Aggregate_Result
+{
+    friend class Key_Value_Collator<T_key_, T_val_, T_hasher_>;
+
+private:
+
+    std::size_t unique_key_count;  // Number of unique keys.
+    std::size_t pair_count;        // Total number of key-value pairs.
+    std::size_t mode_count;        // Number of pairs with a most frequent key.
+
+
+    Aggregate_Result(): unique_key_count(0), pair_count(0), mode_count(0)
+    {}
+
+
+public:
+
+    // Aggregates the result statistics with `other`'s ones.
+    void aggregate(const Aggregate_Result& other)
+    {
+        unique_key_count += other.unique_key_count;
+        pair_count += other.pair_count;
+        if(mode_count < other.mode_count)
+            mode_count = other.mode_count;
+    }
+};
+
+
 template <typename T_key_>
 class Identity_Functor
 {
