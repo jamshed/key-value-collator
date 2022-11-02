@@ -92,6 +92,9 @@ private:
 
 public:
 
+    Key_Value_Collator() = delete;
+    Key_Value_Collator(const Key_Value_Collator&) = delete;
+    Key_Value_Collator& operator=(const Key_Value_Collator&) = delete;
 
     // Constructs a key-value pair collection object to collate (and iterate
     // over) key-value pairs produced from multiple producers. Temporary disk-
