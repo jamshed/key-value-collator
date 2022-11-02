@@ -190,6 +190,12 @@ inline std::size_t Key_Value_Iterator<T_key_, T_val_>::read(key_val_pair_t* cons
 {
     lock.lock();
 
+    if(at_end)
+    {
+        lock.unlock();
+        return 0;
+    }
+
     if(file_ptr == nullptr && !at_end)
         set_file_handle(0);
 
